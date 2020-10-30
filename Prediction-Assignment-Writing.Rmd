@@ -1,0 +1,88 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Nikolas"
+date: "29/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+In data obtained from http://groupware.les.inf.puc-rio.br/har accelerometers were placed on the belt, forearm, arm, and dumbell of 6 participants. The goal of this project is to identify the type of movement made ("classe"), based on the data collected from these accelometers. The movement can either be "A", "B", "C", "D", "E", or "F". To do this we will first create tidy data which will be used to feed the model. We will also create two subsets of the training data, a training and a testing set, as the imported testing data will be used to answer the 20 quiz questions and does not contain the column "classe". Finally we will use different models to predict the test set, the best one will be used fo the quiz. 
+
+## Loading required packages and data
+```{r, echo = TRUE}
+library(caret)
+
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+```
+
+## Creating Tidy data
+We first want to split up our data into a training and test set. A common split is to use 60% for the training data, and 40% for the testing data. This is exactly what we will do. 
+``` {r, echo = TRUE}
+set.seed(1234)
+intrain <- createDataPartition(training$classe, p = 0.6, list = FALSE)
+
+train1 <- training[intrain, ]
+test1 <- training[-intrain, ]
+```
+
+We want to create a data set that is easier for the machine learning model to interpret. To do this, we first need to get rid of all predictors that mostly consist of Na's, in this case I am going to set the threshold to 90%, any variable with a higher percentage of NA's will be excluded. We also want to get rid of any predictors that have only one or very few unique variables, as this is not going to help the model predict the test data set values. Finally we want to get rid of predictors that provide no additional value (as they are not related to the variable we are trying to predict), such as row number, user name and timestamps.
+``` {r, echo = TRUE}
+# Removing predictors containing more than 90% Na's
+NoNAs <- lapply(train1, function(x) mean(is.na(x)) ) < 0.9
+train1 <- train1[, NoNAs == TRUE]
+test1 <- test1[, NoNAs == TRUE]
+
+# Removing predictors with (near) zero variance
+zero <- nearZeroVar(train1)
+train1 <- train1[, -(zero)]
+test1 <- test1[, -(zero)]
+
+# Removing predictors that provide no extra value
+novalue <- c(1:6)
+train1 <- train1[, -(novalue)]
+test1 <- test1[, -(novalue)]
+```
+
+## Model Creation
+Since I do not have the most powerful computer and in order to prevent over fitting I want to limit the number of resampling iterations. For this I will use the trainControl function, which I will include in all of the 
+```{r, echo = TRUE}
+tc=trainControl(method="cv", number=5)
+```
+
+### 1. Decision Tree
+``` {r, echo = TRUE}
+set.seed(1234)
+mod_trees <- train(classe~., method = "rpart", data = train1, trControl = tc, 
+                   metric = "Accuracy")
+pred_trees <- predict(mod_trees, newdata = test1)
+table_trees <- table(pred_trees, test1$classe)
+confusionMatrix(table_trees)
+```
+
+### 2. Boosting
+``` {r, echo = TRUE}
+set.seed(1234)
+mod_boost <- train(classe ~ ., method="gbm", data=train1, trControl = tc, 
+                   metric = "Accuracy", verbose = FALSE)
+pred_boost <- predict(mod_boost, test1)
+table_boost <- table(pred_boost, test1$classe)
+confusionMatrix(table_boost)
+
+```
+
+### 3. Random Forests
+``` {r, echo = TRUE}
+set.seed(1234)
+mod_rf <- train(classe ~., method = "rf", data = train1, trControl = tc, 
+                   metric = "Accuracy")
+pred_rf <- predict(mod_rf, test1)
+```
+
+## Model Selection
+
